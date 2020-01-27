@@ -56,12 +56,32 @@ class MainController {
             method = RequestMethod.GET,
             produces = "application/json")
     @ResponseBody
-    String echoResponse(@PathVariable("response") String response) throws IOException {
+    String echoResponse(HttpServletRequest request,
+                        @PathVariable("response") String response,
+                        @RequestParam(value = SharedConstants.QUERY_FIREBASE_URL, required = false) boolean firebaseUrl) throws IOException {
+        String responseReturn = "";
+        if (firebaseUrl) {
+            String data = "";
+            data = FirebaseUtils.INSTANCE.getData(response);
+            String url = requestHttpUrl(request)
+                    .addPathSegment(Constants.V1)
+                    .addPathSegment(RESPONSE_INFO)
+                    .toString() + "/" + data;
+
+            HashMap<String, String> queryParams = UtilsKt.getPlainUrlQueryParam(url);
+            if (queryParams.containsKey(SharedConstants.QUERY_PARAM_REQUEST_BODY)) {
+                responseReturn = responseManager.decodeBody(data.substring(0, data.indexOf("?" + SharedConstants.QUERY_PARAM_REQUEST_BODY)));
+            } else {
+                responseReturn = responseManager.decodeBody(data.substring(0, data.indexOf("?" + SharedConstants.QUERY_PARAM_DATA)));
+            }
+        } else {
+            responseReturn = SharedConstants.EMPTY_RESPONSE_BODY.equals(response)
+                    ? "No body"
+                    : responseManager.decodeBody(response);
+        }
         analyticsManager.sendPageView("/" + RESPONSE_ECHO);
 
-        return SharedConstants.EMPTY_RESPONSE_BODY.equals(response)
-                ? "No body"
-                : responseManager.decodeBody(response);
+        return responseReturn;
     }
 
     @RequestMapping(value = RESPONSE_INFO_URL, method = RequestMethod.GET)
@@ -75,9 +95,11 @@ class MainController {
             throws IOException {
         HttpUrl infoUrl = null;
         HttpUrl.Builder infoUrlBuilder;
+        String originalUrlString = null;
 
         if (firebaseUrl) {
             String data = "";
+            originalUrlString = responseBodyString;
             data = FirebaseUtils.INSTANCE.getData(responseBodyString);
             String url = requestHttpUrl(request)
                     .addPathSegment(Constants.V1)
@@ -139,11 +161,23 @@ class MainController {
             infoShortenUrl = infoUrlBuilder.build().toString();
         }
 
-        HttpUrl responseBodyUrl = requestHttpUrl(request)
-                .addPathSegment(Constants.V1)
-                .addPathSegment(RESPONSE_ECHO)
-                .addEncodedPathSegment(responseBodyString)
-                .build();
+        HttpUrl responseBodyUrl = requestHttpUrl(request).addPathSegment(Constants.V1).addPathSegment("").addEncodedPathSegment(responseBodyString).build();
+
+        if (firebaseUrl) {
+            responseBodyUrl = requestHttpUrl(request)
+                    .addPathSegment(Constants.V1)
+                    .addPathSegment(RESPONSE_ECHO)
+                    .addEncodedPathSegment(originalUrlString)
+                    .addQueryParameter(SharedConstants.QUERY_FIREBASE_URL, "1")
+                    .build();
+        } else {
+            responseBodyUrl = requestHttpUrl(request)
+                    .addPathSegment(Constants.V1)
+                    .addPathSegment(RESPONSE_ECHO)
+                    .addEncodedPathSegment(responseBodyString)
+                    .build();
+        }
+
 
         String responseBody = SharedConstants.EMPTY_RESPONSE_BODY.equals(responseBodyString)
                 ? null
